@@ -322,7 +322,7 @@ def home():
             </div>
             
             <div class="input-group">
-                <input type="text" id="code" placeholder="Custom code (optional, e.g., my-link)" autocomplete="off" />
+                <input type="text" id="code" placeholder="Custom code (optional, e.g., my-link)" autocomplete="off" maxlength="10" />
             </div>
             
             <button class="btn" id="submit-btn" onclick="shorten()">
@@ -435,6 +435,9 @@ def shorten_url(body: ShortenRequest, request: Request):
     # Validate URL thô
     if not body.url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="URL phải bắt đầu bằng http:// hoặc https://")
+
+    if body.custom_code and len(body.custom_code) > 10:
+        raise HTTPException(status_code=400, detail="Custom code không được dài quá 10 ký tự!")
 
     short_code = body.custom_code if body.custom_code else generate_code()
 
