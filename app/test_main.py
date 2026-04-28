@@ -9,6 +9,7 @@ from unittest.mock import patch, MagicMock
 # Mock DB và Redis trước khi import app
 import sys
 sys.modules['psycopg2'] = MagicMock()
+sys.modules['psycopg2.extras'] = MagicMock()
 sys.modules['redis'] = MagicMock()
 
 from main import app
