@@ -1,0 +1,41 @@
+# ── fly.toml — Fly.io deployment config (Phase 5) ───────────
+# Deploy: flyctl deploy
+# Free tier: đủ để demo cho nhà tuyển dụng
+
+app = "url-shortener"        # đổi thành tên unique của bạn
+primary_region = "sin"       # Singapore — gần VN nhất
+
+[build]
+  dockerfile = "app/Dockerfile"
+
+[env]
+  DB_NAME    = "urlshortener"
+  DB_USER    = "postgres"
+  REDIS_HOST = "localhost"   # đổi thành Upstash host
+
+[http_service]
+  internal_port       = 8000
+  force_https         = true   # tự động HTTPS
+  auto_stop_machines  = true   # tắt khi không có traffic → tiết kiệm
+  auto_start_machines = true   # tự bật khi có request
+  min_machines_running = 0     # free tier: 0 machine khi idle
+
+  [http_service.concurrency]
+    type       = "connections"
+    hard_limit = 25
+    soft_limit = 20
+
+[[vm]]
+  memory = "256mb"             # free tier
+  cpu_kind = "shared"
+  cpus = 1
+
+[checks]
+  [checks.health]
+    grace_period = "30s"
+    interval     = "15s"
+    method       = "GET"
+    path         = "/health"
+    port         = 8000
+    timeout      = "10s"
+    type         = "http"

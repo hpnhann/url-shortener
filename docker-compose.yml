@@ -1,0 +1,136 @@
+# ============================================================
+#  URL Shortener — docker-compose.yml
+#  Phase 3: Docker cơ bản
+#  Phase 4: Nginx + networking
+#  Phase 5: CI/CD sẽ dùng file này để deploy
+#  Phase 6: Thêm Prometheus + Grafana (uncomment bên dưới)
+# ============================================================
+
+services:
+
+  # ── App: FastAPI ─────────────────────────────────────────
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    container_name: urlshortener_app
+    restart: unless-stopped
+    environment:
+      DB_HOST: db
+      DB_NAME: urlshortener
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-secret}   # đọc từ .env
+      REDIS_HOST: redis
+    depends_on:
+      db:
+        condition: service_healthy           # đợi DB sẵn sàng
+      redis:
+        condition: service_healthy
+    networks:
+      - backend                              # app ↔ db ↔ redis
+      - frontend                             # nginx ↔ app
+    # Không expose port ra ngoài — chỉ qua Nginx
+    # ports: ["8000:8000"]  # bỏ comment nếu muốn test trực tiếp
+
+  # ── Database: PostgreSQL ──────────────────────────────────
+  db:
+    image: postgres:15-alpine               # alpine = nhỏ ~80MB
+    container_name: urlshortener_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: urlshortener
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-secret}
+    volumes:
+      - pgdata:/var/lib/postgresql/data     # data không mất khi restart
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql  # chạy khi khởi tạo
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Cache: Redis ──────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    container_name: urlshortener_redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Reverse Proxy: Nginx ──────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: urlshortener_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      # Phase 4: thêm HTTPS
+      # - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Phase 4: mount SSL cert
+      # - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - app
+    networks:
+      - frontend
+
+  # ── Monitoring: Prometheus ────────────────────────────────
+  # Phase 6: bỏ comment để bật monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: urlshortener_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheusdata:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=7d'   # giữ data 7 ngày
+    ports:
+      - "9090:9090"
+    networks:
+      - backend
+      - monitoring
+
+  # ── Dashboard: Grafana ────────────────────────────────────
+  grafana:
+    image: grafana/grafana:latest
+    container_name: urlshortener_grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring
+
+# ── Networks ──────────────────────────────────────────────
+networks:
+  frontend:    # nginx ↔ app
+    driver: bridge
+  backend:     # app ↔ db ↔ redis
+    driver: bridge
+  monitoring:  # prometheus ↔ grafana
+    driver: bridge
+
+# ── Volumes ───────────────────────────────────────────────
+volumes:
+  pgdata:          # PostgreSQL data
+  prometheusdata:  # Prometheus data
+  grafanadata:     # Grafana dashboards & settings
