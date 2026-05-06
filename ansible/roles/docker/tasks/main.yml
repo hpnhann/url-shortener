@@ -1,0 +1,82 @@
+# ── roles/docker/tasks/main.yml ─────────────────────────────
+# Role = tập hợp tasks có thể tái sử dụng
+# Role "docker" này cài Docker lên bất kỳ Ubuntu server nào
+# Dùng lại được cho mọi project, không chỉ URL Shortener
+
+---
+# ── Bước 1: Cài các package cần thiết ───────────────────────
+- name: Cài dependencies cho Docker
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+      - python3-pip
+    state: present
+    update_cache: yes
+  become: yes    # chạy với sudo
+
+# ── Bước 2: Thêm Docker GPG key ─────────────────────────────
+- name: Thêm Docker GPG key
+  apt_key:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+  become: yes
+
+# ── Bước 3: Thêm Docker repository ──────────────────────────
+- name: Thêm Docker repository
+  apt_repository:
+    repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+  become: yes
+
+# ── Bước 4: Cài Docker Engine ───────────────────────────────
+- name: Cài Docker Engine
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: yes
+  become: yes
+
+# ── Bước 5: Start và enable Docker service ──────────────────
+- name: Start Docker service
+  systemd:
+    name: docker
+    state: started
+    enabled: yes    # tự start khi server reboot
+  become: yes
+
+# ── Bước 6: Thêm user vào docker group ──────────────────────
+# Để không cần gõ sudo mỗi lần dùng docker
+- name: Thêm user vào docker group
+  user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: yes
+  become: yes
+
+# ── Bước 7: Cài Docker SDK cho Python (Ansible dùng) ────────
+- name: Cài Docker Python SDK
+  pip:
+    name:
+      - docker
+      - docker-compose
+    state: present
+  become: yes
+
+# ── Bước 8: Verify Docker đã cài xong ───────────────────────
+- name: Kiểm tra Docker version
+  command: docker --version
+  register: docker_version    # lưu output vào biến
+  changed_when: false
+
+- name: In Docker version
+  debug:
+    msg: "✅ Docker đã cài: {{ docker_version.stdout }}"

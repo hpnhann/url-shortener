@@ -1,22 +1,24 @@
-# Environment — tuyệt đối không commit
-.env
+# ── .gitignore cho Terraform ────────────────────────────────
 
-# Python
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-.venv/
-venv/
+# State files — chứa thông tin nhạy cảm, lưu trên S3 thay vì Git
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
 
-# Docker volumes (local data)
-data/
+# Thư mục cache của Terraform
+.terraform/
+.terraform.lock.hcl
 
-# OS
-.DS_Store
-Thumbs.db
+# Var files có thể chứa secrets
+*.tfvars
+!dev.tfvars      # ngoại trừ dev.tfvars (không có secrets)
 
-# IDE
-.vscode/
-.idea/
-*.swp
+# Crash logs
+crash.log
+crash.*.log
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json

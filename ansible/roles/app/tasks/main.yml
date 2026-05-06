@@ -1,0 +1,75 @@
+# ── roles/app/tasks/main.yml ────────────────────────────────
+# Role "app" — deploy URL Shortener lên server
+# Chạy sau khi role "docker" đã cài Docker xong
+
+---
+# ── Bước 1: Tạo thư mục project ─────────────────────────────
+- name: Tạo thư mục /app
+  file:
+    path: /app/url-shortener
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: "0755"
+  become: yes
+
+# ── Bước 2: Copy docker-compose.yml lên server ──────────────
+- name: Copy docker-compose.yml
+  copy:
+    src: "{{ playbook_dir }}/../docker-compose.yml"
+    dest: /app/url-shortener/docker-compose.yml
+    owner: "{{ ansible_user }}"
+    mode: "0644"
+
+# ── Bước 3: Tạo file .env từ template ───────────────────────
+# Template = file có biến, Ansible điền giá trị tự động
+- name: Tạo file .env
+  template:
+    src: env.j2           # file template (Jinja2)
+    dest: /app/url-shortener/.env
+    owner: "{{ ansible_user }}"
+    mode: "0600"          # chỉ owner đọc được — bảo mật
+
+# ── Bước 4: Pull Docker images mới nhất ─────────────────────
+- name: Pull Docker images
+  command: docker compose pull
+  args:
+    chdir: /app/url-shortener
+  register: pull_result
+  changed_when: "'Pull complete' in pull_result.stdout"
+
+# ── Bước 5: Chạy docker compose up ──────────────────────────
+- name: Start URL Shortener stack
+  command: docker compose up -d --remove-orphans
+  args:
+    chdir: /app/url-shortener
+  register: compose_result
+
+- name: Kết quả deploy
+  debug:
+    msg: "🚀 Deploy xong: {{ compose_result.stdout_lines[-1] }}"
+
+# ── Bước 6: Đợi app healthy ─────────────────────────────────
+- name: Đợi app khởi động (30 giây)
+  wait_for:
+    host: localhost
+    port: 80
+    delay: 5
+    timeout: 60
+  ignore_errors: yes
+
+# ── Bước 7: Health check ────────────────────────────────────
+- name: Kiểm tra app health
+  uri:
+    url: "http://localhost/health"
+    method: GET
+    status_code: 200
+  register: health_check
+  retries: 5          # thử lại 5 lần
+  delay: 10           # mỗi lần cách nhau 10 giây
+  until: health_check.status == 200
+  ignore_errors: yes
+
+- name: Kết quả health check
+  debug:
+    msg: "{{ '✅ App healthy!' if health_check.status == 200 else '⚠️ App chưa ready' }}"

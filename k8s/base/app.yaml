@@ -1,0 +1,103 @@
+# ── Deployment: FastAPI app ─────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: url-shortener-app
+  namespace: url-shortener
+spec:
+  replicas: 2              # ← ĐÂY LÀ SỨC MẠNH K8s!
+                           # Docker Compose: chỉ 1 instance
+                           # K8s: 2 instance, tự load balance
+                           # 1 cái chết → cái kia vẫn chạy
+  selector:
+    matchLabels:
+      app: url-shortener-app
+  # ── Rolling Update Strategy ────────────────────────────────
+  # Deploy version mới mà không downtime
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0    # không được có instance nào down trong lúc update
+      maxSurge: 1          # tạo thêm 1 instance mới trước khi xóa cái cũ
+  template:
+    metadata:
+      labels:
+        app: url-shortener-app
+    spec:
+      containers:
+        - name: app
+          image: pnhann/url-shortener:latest   # image từ Docker Hub
+          ports:
+            - containerPort: 8000
+          # Lấy config từ ConfigMap và Secret
+          envFrom:
+            - configMapRef:
+                name: url-shortener-config
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: url-shortener-secret
+                  key: DB_PASSWORD
+          # Readiness: Pod sẵn sàng nhận traffic chưa?
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 3
+          # Liveness: Pod có đang sống không?
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+
+---
+# ── Service: load balance traffic vào 2 Pod app ─────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+  namespace: url-shortener
+spec:
+  selector:
+    app: url-shortener-app
+  ports:
+    - port: 8000
+      targetPort: 8000
+  type: ClusterIP
+
+---
+# ── HorizontalPodAutoscaler: tự động scale ──────────────────
+# CPU > 70% → tự động tạo thêm Pod (tối đa 5)
+# CPU < 70% → tự động xóa bớt Pod (tối thiểu 2)
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: url-shortener-hpa
+  namespace: url-shortener
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: url-shortener-app
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

@@ -1,0 +1,26 @@
+---
+- name: "[HEALTH CHECK] Kiểm tra trạng thái hệ thống"
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  tasks:
+    - name: Lấy thông tin dung lượng phân vùng gốc (/)
+      command: df -h /
+      register: df_out
+      changed_when: false
+
+    - name: Lấy phần trăm sử dụng đĩa
+      shell: "df -h / | awk 'NR==2 {print $5}' | sed 's/%//'"
+      register: disk_usage
+      changed_when: false
+
+    - name: Cảnh báo nếu dung lượng đĩa > 80%
+      fail:
+        msg: "🚨 NGUY HIỂM: Dung lượng ổ cứng đã vượt quá 80%! Hiện tại là {{ disk_usage.stdout }}%"
+      when: disk_usage.stdout | int > 80
+      ignore_errors: yes
+
+    - name: Thông báo an toàn
+      debug:
+        msg: "✅ Dung lượng ổ cứng an toàn ({{ disk_usage.stdout }}%)"
+      when: disk_usage.stdout | int <= 80

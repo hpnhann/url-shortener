@@ -1,0 +1,32 @@
+---
+- name: "[BACKUP] Sao lưu dữ liệu PostgreSQL"
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+  tasks:
+    - name: Lấy timestamp hiện tại
+      set_fact:
+        timestamp: "{{ ansible_date_time.iso8601_basic_short }}"
+
+    - name: Đảm bảo thư mục lưu backup tồn tại
+      file:
+        path: /tmp/backups
+        state: directory
+        mode: '0755'
+
+    - name: Backup Database
+      command: docker compose exec -T db pg_dump -U postgres urlshortener
+      args:
+        chdir: /mnt/d/url-shortener  # Chỉnh lại path thư mục project nếu cần
+      register: db_backup
+      changed_when: true
+
+    - name: Lưu vào file SQL
+      copy:
+        content: "{{ db_backup.stdout }}"
+        dest: "/tmp/backups/backup-{{ timestamp }}.sql"
+        mode: '0644'
+
+    - name: Thông báo kết quả
+      debug:
+        msg: "✅ Backup thành công! File đã được lưu tại /tmp/backups/backup-{{ timestamp }}.sql"

@@ -1,17 +1,24 @@
 # 🔗 URL Shortener — DevOps Learning Project
 
-> Project học DevOps theo roadmap: Docker → Networking → CI/CD → Monitoring  
-> Stack: **Python FastAPI + PostgreSQL + Redis + Nginx + Prometheus + Grafana**  
+> Project học DevOps theo roadmap: Docker → Networking → Cấu trúc Code → Terraform (IaC) → CI/CD → Monitoring  
+> Stack: **Python FastAPI + PostgreSQL + Redis + Nginx + Prometheus + Grafana + Terraform (LocalStack)**  
 > Chi phí: **$0/tháng** — chạy hoàn toàn trên máy local
 
 ---
 
-## 📁 Cấu trúc project
+## 📁 Cấu trúc project hiện tại (Đã Refactor)
 
-```
+```text
 url-shortener/
-├── app/
-│   ├── main.py              # FastAPI application
+├── app/                     # FastAPI application (Đã được module hoá)
+│   ├── main.py              # Entry point, setup Middleware & Router
+│   ├── database.py          # Kết nối PostgreSQL & Redis, init DB
+│   ├── routes.py            # Chứa các API endpoints
+│   ├── schemas.py           # Pydantic models (Input/Output)
+│   ├── utils.py             # Hàm tiện ích (random code)
+│   ├── metrics.py           # Định nghĩa Prometheus metrics
+│   ├── templates/           # Thư mục chứa giao diện web
+│   │   └── index.html       # Giao diện UI Premium
 │   ├── test_main.py         # Unit tests
 │   ├── requirements.txt
 │   └── Dockerfile           # Multi-stage build
@@ -26,7 +33,10 @@ url-shortener/
 ├── .github/
 │   └── workflows/
 │       └── ci-cd.yml        # GitHub Actions pipeline
-├── docker-compose.yml       # Toàn bộ stack
+├── docker-compose.yml       # Toàn bộ stack (Nginx chạy port 8080)
+├── TERRAFORM_GUIDE.md       # Hướng dẫn chi tiết chạy Terraform
+├── main.tf, storage.tf, networking.tf, compute.tf # Code hạ tầng Terraform
+├── dev.tfvars, staging.tfvars # Biến môi trường cho Terraform
 ├── .env.example             # Template biến môi trường
 └── README.md
 ```
@@ -37,21 +47,21 @@ url-shortener/
 
 | Phase | Nội dung | Lệnh bắt đầu |
 |---|---|---|
-| 3 — Docker | Chạy full stack local | `make up` |
-| 4 — HTTPS | Bật SSL local | `make ssl-setup` |
-| 5 — CI/CD | Push code → tự build | Push lên GitHub |
-| 5 — Deploy | Demo live cho HR | `bash scripts/deploy-fly.sh` |
-| 6 — Monitoring | Xem dashboard | http://localhost:3000 |
+| 3 — Docker | Chạy full stack local (App, DB, Redis, Nginx) | `docker compose up -d` |
+| 4 — Code Structure | Refactor từ 1 file `main.py` khổng lồ sang kiến trúc module gọn gàng | |
+| 5 — IaC (Terraform) | Xây dựng hạ tầng Cloud giả lập với LocalStack (VPC, EC2, S3, Security Groups) | `terraform apply -var-file="dev.tfvars"` |
+| 6 — CI/CD | Push code → tự build | Push lên GitHub |
+| 7 — Monitoring | Xem dashboard đo đạc hiệu năng | http://localhost:3000 |
 
 ---
 
-## 🚀 Chạy nhanh (Phase 3 — Docker)
+## 🚀 Chạy nhanh App (Phase 3 & 4 — Docker & App)
 
 ### Yêu cầu
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (Windows/Mac)
 - Git
 
-### Các bước
+### Các bước chạy
 
 ```bash
 # 1. Clone project
@@ -66,121 +76,69 @@ docker compose up -d
 
 # 4. Kiểm tra tất cả đang chạy
 docker compose ps
-
-# 5. Xem log
-docker compose logs -f app
 ```
 
 ### Truy cập
 
 | Service | URL | Ghi chú |
 |---|---|---|
-| App (qua Nginx) | http://localhost | Trang chủ |
-| API docs | http://localhost/docs | Swagger UI tự động |
+| App (qua Nginx) | **http://localhost:8080** | Trang chủ URL Shortener (đã đổi sang 8080 để tránh xung đột WSL/Windows IIS) |
+| API docs | http://localhost:8080/docs | Swagger UI tự động |
 | Prometheus | http://localhost:9090 | Metrics |
 | Grafana | http://localhost:3000 | Dashboard (admin/admin123) |
 
 ---
 
-## 📚 Học theo từng Phase
+## ☁️ Terraform & LocalStack (Phase 5 — Infrastructure as Code)
 
-### Phase 3 — Docker ✅
+Mục tiêu của phase này là tự động hóa việc tạo mạng (VPC), máy chủ (EC2), và nơi lưu trữ (S3) thông qua code thay vì bấm tay trên giao diện AWS.
+
+**Kiến trúc 3-Tier Security:**
+- **Public Subnet:** Chứa Nginx EC2 (Có Internet Gateway để đón khách từ ngoài vào).
+- **Private Subnet:** Chứa App EC2 & Database (Cách ly hoàn toàn khỏi Internet).
+- **Security Groups:** 
+  - Nginx mở port 80/443 ra ngoài.
+  - App mở port 8000 nhưng **chỉ nhận** traffic từ Nginx.
+  - DB mở port 5432 nhưng **chỉ nhận** traffic từ App.
+
+**Cách chạy Terraform (Xem kỹ trong `TERRAFORM_GUIDE.md`):**
 ```bash
-# Xem container đang chạy
-docker compose ps
+# 1. Bật LocalStack lên trước
+docker run --rm -it -p 4566:4566 -p 4510-4559:4510-4559 localstack/localstack:3.8.0
 
-# Vào trong container app
-docker compose exec app bash
+# 2. Ở terminal khác, chạy Terraform
+terraform init -upgrade
+terraform plan -var-file="dev.tfvars"
+terraform apply -var-file="dev.tfvars" -auto-approve
 
-# Xem log realtime
-docker compose logs -f app
-
-# Restart 1 service
-docker compose restart app
-
-# Xóa hết và chạy lại sạch
-docker compose down -v && docker compose up -d
+# 3. Triển khai môi trường staging (Độc lập hoàn toàn với dev)
+terraform apply -var-file="staging.tfvars" -auto-approve
 ```
 
-**Hiểu được sau phase này:**
-- Tại sao cần multi-stage Dockerfile
-- Sự khác biệt giữa `networks: backend` và `networks: frontend`
-- Tại sao app không expose port 8000 ra ngoài mà phải qua Nginx
-- `depends_on` với `healthcheck` giải quyết vấn đề gì
+> **Bài học quan trọng trong quá trình làm:**
+> - AWS API yêu cầu tham chiếu `subnet_id` bằng chuỗi ID (`subnet-xxx`) do AWS cấp phát chứ không phải dải CIDR (`10.0.1.0/24`).
+> - EC2 nằm trong VPC bắt buộc phải dùng `vpc_security_group_ids` thay vì `security_groups`.
 
 ---
 
-### Phase 4 — Networking
-Setup HTTPS local bằng `mkcert`:
-```bash
-# Cài mkcert (Windows: chạy trong PowerShell admin)
-winget install mkcert
+## 🤖 Ansible (Configuration Management & Automation)
 
-# Tạo CA và cert cho localhost
-mkcert -install
-mkcert -cert-file nginx/certs/cert.pem -key-file nginx/certs/key.pem localhost
+Ansible đóng vai trò như một **Đạo diễn**, giúp tự động hoá việc cấu hình hàng loạt máy chủ mà không cần cài đặt agent (Agentless) và đảm bảo tính nhất quán (Idempotent).
 
-# Bỏ comment phần HTTPS trong nginx.conf và docker-compose.yml
-# Restart nginx
-docker compose restart nginx
-```
+Trong project này, chúng ta có các Playbook (`ansible/`):
+- `backup.yml`: Tự động kết nối, chạy `pg_dump` backup database và lưu vào `/tmp/backups/`.
+- `health-check.yml`: Kiểm tra dung lượng đĩa cứng, tự động phát cảnh báo đỏ (fail) nếu đĩa đầy > 80%.
+- `local-test.yml`: Playbook test chạy trực tiếp trên máy local (`connection: local`) để kiểm tra Docker, cấu hình hệ thống, và gọi thẳng các health-check task.
 
----
+**Chạy thử Ansible Playbook (trên Windows PowerShell):**
+Vì Ansible không chạy trực tiếp được trên Windows, bạn cần thêm chữ `wsl` ở đầu lệnh để chạy thông qua môi trường Linux (Ubuntu) đã cài trong máy:
 
-### Phase 5 — CI/CD với GitHub Actions
+```powershell
+# Chạy script backup database
+wsl ansible-playbook ansible/backup.yml
 
-1. Push code lên GitHub
-2. Vào **Settings → Secrets and variables → Actions**, thêm:
-   - `DOCKERHUB_USERNAME`: username Docker Hub của bạn
-   - `DOCKERHUB_TOKEN`: tạo tại hub.docker.com → Account Settings → Security
-3. Push bất kỳ thay đổi nào lên `main` → pipeline tự chạy
-
-```bash
-git add .
-git commit -m "feat: add something"
-git push origin main
-# → Vào tab Actions trên GitHub để xem pipeline chạy
-```
-
----
-
-### Phase 6 — Monitoring với Grafana
-
-Prometheus + Grafana đã được bật sẵn trong `docker-compose.yml`.
-
-**Tạo dashboard đầu tiên:**
-1. Vào http://localhost:3000 (admin / admin123)
-2. Chọn **Explore** → chọn datasource **Prometheus**
-3. Thử các query:
-
-```promql
-# Tổng request theo endpoint
-http_requests_total
-
-# Request rate mỗi giây (trung bình 1 phút)
-rate(http_requests_total[1m])
-
-# Latency trung bình
-rate(http_request_duration_seconds_sum[5m]) 
-  / rate(http_request_duration_seconds_count[5m])
-
-# Tổng URL đã tạo
-urls_created_total
-
-# Tổng redirect
-url_redirects_total
-```
-
----
-
-## 🧪 Chạy tests
-
-```bash
-# Chạy tests trong container
-docker compose run --rm app pytest -v
-
-# Chạy local (cần có Python + pip install -r requirements.txt)
-cd app && pytest -v
+# Chạy test local & kiểm tra health check
+wsl ansible-playbook ansible/local-test.yml
 ```
 
 ---
@@ -194,12 +152,10 @@ cd app && pytest -v
 | `GET` | `/{code}` | Redirect tới URL gốc |
 | `GET` | `/api/stats` | Thống kê |
 | `GET` | `/health` | Health check |
-| `GET` | `/metrics` | Prometheus metrics |
-| `GET` | `/docs` | Swagger UI |
 
 **Ví dụ tạo short URL:**
 ```bash
-curl -X POST http://localhost/shorten \
+curl -X POST http://localhost:8080/shorten \
   -H "Content-Type: application/json" \
   -d '{"url": "https://google.com", "custom_code": "gg"}'
 ```
@@ -210,33 +166,12 @@ curl -X POST http://localhost/shorten \
 
 Sau khi hoàn thành mỗi phase, hãy tự trả lời:
 
-**Phase 3:**
-- [ ] Tại sao dùng `python:3.11-slim` thay vì `python:3.11`?
-- [ ] Multi-stage build giúp gì cho image size?
-- [ ] `docker compose down` vs `docker compose down -v` khác nhau thế nào?
-- [ ] Tại sao app cần `depends_on` với `condition: service_healthy`?
+**Phase Docker & Cấu trúc Code:**
+- [ ] Tại sao app cần `depends_on` với `condition: service_healthy` đối với database?
+- [ ] Việc tách `main.py` thành `routes.py`, `database.py` có lợi ích gì khi làm việc nhóm?
+- [ ] Tại sao Nginx port 80 trên Windows hay bị xung đột (Ví dụ: với WSL wslrelay.exe)?
 
-**Phase 4:**
-- [ ] Nginx đang làm gì mà app không làm trực tiếp được?
-- [ ] Rate limiting hoạt động ở tầng nào?
-- [ ] Tại sao cần 2 network (frontend/backend) riêng nhau?
-
-**Phase 5:**
-- [ ] Pipeline sẽ làm gì khi tests fail?
-- [ ] `github.sha` trong image tag có tác dụng gì?
-- [ ] Cache trong GitHub Actions giúp gì?
-
-**Phase 6:**
-- [ ] `rate()` trong PromQL nghĩa là gì?
-- [ ] Tại sao cần Grafana nếu Prometheus đã có UI?
-- [ ] Retention 7 ngày trong Prometheus có nghĩa là gì?
-
----
-
-## 📖 Tài nguyên học thêm
-
-- [FastAPI docs](https://fastapi.tiangolo.com)
-- [Docker docs](https://docs.docker.com)
-- [Nginx beginner guide](http://nginx.org/en/docs/beginners_guide.html)
-- [PromQL cheatsheet](https://promlabs.com/promql-cheat-sheet/)
-- [Play with Docker](https://labs.play-with-docker.com) — thực hành online miễn phí
+**Phase Terraform:**
+- [ ] `outputs.tf` đóng vai trò gì giống với khái niệm nào trong lập trình?
+- [ ] Tại sao Database lại đặt trong Private Subnet mà không đặt chung với Nginx ở Public Subnet?
+- [ ] Việc dùng file `dev.tfvars` và `staging.tfvars` giải quyết bài toán gì khi quản lý hạ tầng?
