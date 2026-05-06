@@ -36,7 +36,7 @@ jobs:
 
       - name: Run tests
         run: |
-          cd app && pytest -v --tb=short
+          pytest app/ -v --tb=short
 
   # ── Job 2: Build & Push Docker image ─────────────────────
   build:

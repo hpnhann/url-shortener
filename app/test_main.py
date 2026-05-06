@@ -12,7 +12,7 @@ sys.modules['psycopg2'] = MagicMock()
 sys.modules['psycopg2.extras'] = MagicMock()
 sys.modules['redis'] = MagicMock()
 
-from main import app
+from app.main import app
 
 client = TestClient(app)
 
@@ -33,7 +33,7 @@ def test_health_endpoint_structure():
 
 def test_shorten_invalid_url():
     """URL không có http:// phải bị từ chối"""
-    with patch("main.get_db"), patch("main.get_redis"):
+    with patch("app.routes.get_db"), patch("app.routes.get_redis"):
         res = client.post("/shorten", json={"url": "google.com"})
     assert res.status_code == 400
     assert "http" in res.json()["detail"].lower()
@@ -41,14 +41,14 @@ def test_shorten_invalid_url():
 
 def test_generate_code_length():
     """Short code phải đúng 6 ký tự"""
-    from main import generate_code
+    from app.utils import generate_code
     code = generate_code()
     assert len(code) == 6
 
 
 def test_generate_code_unique():
     """Các code sinh ra phải khác nhau"""
-    from main import generate_code
+    from app.utils import generate_code
     codes = {generate_code() for _ in range(100)}
     assert len(codes) > 90  # ít nhất 90% unique
 
