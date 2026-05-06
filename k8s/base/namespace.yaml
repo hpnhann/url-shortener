@@ -1,0 +1,8 @@
+# ── Namespace: giống "folder" để gom tất cả resource của project ──
+# Tránh xung đột với app khác trong cùng cluster
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: url-shortener
+  labels:
+    app: url-shortener

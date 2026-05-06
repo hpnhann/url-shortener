@@ -1,0 +1,30 @@
+# ── Ingress: thay thế Nginx container trong K8s ─────────────
+# Docker Compose: Nginx container làm reverse proxy
+# Kubernetes: Ingress controller làm reverse proxy
+# Ingress = "bộ luật routing" — ai đi đâu, vào đâu
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: url-shortener-ingress
+  namespace: url-shortener
+  annotations:
+    # Rate limiting: 10 request/giây mỗi IP
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    # Riêng endpoint /shorten giới hạn chặt hơn
+    nginx.ingress.kubernetes.io/limit-connections: "5"
+    # Bật gzip compression
+    nginx.ingress.kubernetes.io/enable-gzip: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: url-shortener.local    # domain local để test
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: app-service
+                port:
+                  number: 8000

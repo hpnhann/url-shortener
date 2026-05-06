@@ -1,0 +1,94 @@
+# ── PersistentVolumeClaim: xin cấp ổ cứng để lưu data ──────
+# Giống Volume trong docker-compose — data không mất khi Pod chết
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: url-shortener
+spec:
+  accessModes:
+    - ReadWriteOnce        # 1 node đọc/ghi tại 1 thời điểm
+  resources:
+    requests:
+      storage: 1Gi         # xin 1GB
+
+---
+# ── Deployment: "tôi muốn luôn có 1 Pod PostgreSQL chạy" ───
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: url-shortener
+spec:
+  replicas: 1              # DB chỉ cần 1 instance
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: DB_NAME
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: url-shortener-config
+                  key: DB_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:           # lấy từ Secret, không phải ConfigMap
+                  name: url-shortener-secret
+                  key: DB_PASSWORD
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+          # Health check — K8s tự restart nếu DB không healthy
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "500m"
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+
+---
+# ── Service: địa chỉ cố định để gọi vào PostgreSQL ─────────
+# Pod có thể chết/thay mới → IP thay đổi
+# Service luôn có địa chỉ cố định: "postgres-service:5432"
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: url-shortener
+spec:
+  selector:
+    app: postgres          # route traffic đến Pod có label này
+  ports:
+    - port: 5432
+      targetPort: 5432
+  type: ClusterIP          # chỉ accessible trong cluster, không ra ngoài

@@ -1,0 +1,42 @@
+# ── site.yml — Master playbook ──────────────────────────────
+# Playbook = danh sách việc cần làm, chạy theo thứ tự
+# site.yml = "cài đặt toàn bộ hệ thống từ đầu"
+
+---
+# ── Play 1: Cài Docker lên TẤT CẢ servers ───────────────────
+- name: Cài Docker lên tất cả servers
+  hosts: all              # áp dụng cho mọi host trong inventory
+  gather_facts: yes       # thu thập thông tin server (OS, IP, RAM...)
+
+  roles:
+    - docker              # chạy role docker trước
+
+# ── Play 2: Deploy app lên App servers ──────────────────────
+- name: Deploy URL Shortener
+  hosts: appservers       # chỉ chạy trên app servers
+  gather_facts: yes
+
+  vars:
+    db_password: "{{ lookup('env', 'DB_PASSWORD') | default('supersecretpassword123') }}"
+    grafana_password: "{{ lookup('env', 'GRAFANA_PASSWORD') | default('admin123') }}"
+
+  roles:
+    - app                 # chạy role app sau khi docker đã sẵn sàng
+
+# ── Play 3: Verify toàn bộ hệ thống ────────────────────────
+- name: Kiểm tra hệ thống
+  hosts: all
+  gather_facts: no
+
+  tasks:
+    - name: Ping tất cả servers
+      ping:
+
+    - name: Kiểm tra Docker đang chạy
+      command: docker ps
+      register: docker_ps
+      changed_when: false
+
+    - name: In trạng thái containers
+      debug:
+        msg: "{{ docker_ps.stdout_lines }}"

@@ -1,0 +1,90 @@
+# ── local-test.yml — Test Ansible trên chính máy mình ───────
+# Dùng "localhost" thay vì SSH vào server thật
+
+---
+- name: "[LOCAL TEST] Kiểm tra Ansible hoạt động"
+  hosts: localhost
+  connection: local       # không SSH, chạy trực tiếp trên máy này
+  gather_facts: yes
+
+  tasks:
+    # ── Task 1: In thông tin máy ────────────────────────────
+    - name: Thông tin hệ thống
+      debug:
+        msg:
+          - "🖥️  OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "💾 RAM: {{ (ansible_memtotal_mb / 1024) | round(1) }}GB"
+          - "🔧 CPU: {{ ansible_processor_vcpus }} cores"
+          - "📁 Home: {{ ansible_env.HOME }}"
+
+    # ── Task 2: Kiểm tra Docker có sẵn không ────────────────
+    - name: Kiểm tra Docker
+      command: docker --version
+      register: docker_ver
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Trạng thái Docker
+      debug:
+        msg: "{{ '✅ ' + docker_ver.stdout if docker_ver.rc == 0 else '❌ Docker chưa cài' }}"
+
+    # ── Task 3: Kiểm tra Docker containers đang chạy ────────
+    - name: Xem containers đang chạy
+      command: docker compose ps
+      args:
+        chdir: /mnt/d/url-shortener    # thư mục project của bạn
+      register: compose_ps
+      changed_when: false
+      ignore_errors: yes
+
+    - name: Danh sách containers
+      debug:
+        msg: "{{ compose_ps.stdout_lines }}"
+
+    # ── Task 4: Tạo thư mục test ────────────────────────────
+    - name: Tạo thư mục test
+      file:
+        path: /tmp/ansible-test
+        state: directory
+        mode: "0755"
+
+    # ── Task 5: Tạo file test ────────────────────────────────
+    - name: Tạo file với nội dung động
+      copy:
+        content: |
+          # File này được tạo bởi Ansible
+          # Thời gian: {{ ansible_date_time.iso8601 }}
+          # Máy: {{ ansible_hostname }}
+          Project: url-shortener
+          Environment: dev
+        dest: /tmp/ansible-test/hello.txt
+
+    - name: Đọc file vừa tạo
+      command: cat /tmp/ansible-test/hello.txt
+      register: file_content
+      changed_when: false
+
+    - name: Nội dung file
+      debug:
+        msg: "{{ file_content.stdout_lines }}"
+
+    # ── Task 6: Kiểm tra Disk Space ─────────────────────────────
+    - name: Lấy phần trăm sử dụng đĩa
+      shell: "df -h / | awk 'NR==2 {print $5}' | sed 's/%//'"
+      register: disk_usage_local
+      changed_when: false
+
+    - name: Cảnh báo nếu dung lượng đĩa > 80%
+      fail:
+        msg: "🚨 NGUY HIỂM: Dung lượng ổ cứng đã vượt quá 80%! Hiện tại là {{ disk_usage_local.stdout }}%"
+      when: disk_usage_local.stdout | int > 80
+      ignore_errors: yes
+
+    # ── Task 7: Tổng kết ────────────────────────────────────
+    - name: Tổng kết
+      debug:
+        msg:
+          - "✅ Ansible hoạt động bình thường!"
+          - "✅ Có thể gather facts từ máy local"
+          - "✅ Có thể tạo file, chạy commands"
+          - "🚀 Sẵn sàng deploy lên server thật!"
